@@ -5,7 +5,7 @@ library(dplyr)
 library(DT)
 library(openxlsx)
 
-# Function to simulate HPLC chromatogram
+# Function to simulate HPLC chromatogram with gradient support
 simulate_chromatogram <- function(compounds, flow_rate, column_length, 
                                   column_diameter, particle_size, 
                                   mobile_phase_composition, 
@@ -14,7 +14,11 @@ simulate_chromatogram <- function(compounds, flow_rate, column_length,
                                   noise_level,
                                   ionic_strength,
                                   ph,
-                                  temperature) {
+                                  temperature,
+                                  gradient_mode = "isocratic", 
+                                  gradient_start = NA, 
+                                  gradient_end = NA, 
+                                  gradient_time = NA) {
   
   # Simulation parameters
   time_points <- seq(0, 15, by = 0.01)
@@ -27,61 +31,113 @@ simulate_chromatogram <- function(compounds, flow_rate, column_length,
   Widths <- numeric(length(compounds))
   Heights <- numeric(length(compounds))
   
+  # Calculate mobile phase composition at each time point for gradient elution
+  mobile_phase_at_time <- if (gradient_mode == "isocratic") {
+    rep(mobile_phase_composition, length(time_points))
+  } else {
+    # Linear gradient calculation
+    phase_values <- numeric(length(time_points))
+    for (i in seq_along(time_points)) {
+      t <- time_points[i]
+      if (t <= 0) {
+        phase_values[i] <- gradient_start
+      } else if (t >= gradient_time) {
+        phase_values[i] <- gradient_end
+      } else {
+        # Linear interpolation
+        phase_values[i] <- gradient_start + (gradient_end - gradient_start) * (t / gradient_time)
+      }
+    }
+    phase_values
+  }
+  
   # Calculate retention times based on parameters
   for (i in seq_along(compounds)) {
-    # Retention time depends on:
-    # - flow rate (higher = faster elution)
-    # - column length (longer = slower elution)
-    # - mobile phase (higher organic = faster elution)
-    # - compound properties
-    # - ionic strength (higher = can affect selectivity)
-    # - pH (affects ionization state)
-    # - temperature (higher = generally faster elution)
+    if (gradient_mode == "isocratic") {
+      # Base retention time for each compound
+      base_rt <- compounds[[i]]$rt
+      # Adjust for flow rate
+      rt_adjusted <- base_rt * (1 / flow_rate) * 1.5
+      # Adjust for column length
+      rt_adjusted <- rt_adjusted * (column_length / 150)
+      # Adjust for mobile phase composition
+      rt_adjusted <- rt_adjusted * (1 - (mobile_phase_composition / 100) * compounds[[i]]$solvent_sensitivity)
+      # Adjust for ionic strength
+      ionic_factor <- 1 + (ionic_strength / 50) * compounds[[i]]$ionic_sensitivity
+      rt_adjusted <- rt_adjusted * ionic_factor
+      # Adjust for pH
+      ph_difference <- abs(ph - compounds[[i]]$optimal_ph)
+      ph_factor <- 1 + (ph_difference / 2) * compounds[[i]]$ph_sensitivity
+      rt_adjusted <- rt_adjusted * ph_factor
+      # Adjust for temperature
+      temp_factor <- (1 - (temperature - 30) * 0.015)
+      rt_adjusted <- rt_adjusted * temp_factor
+      
+      # Add noise to RT
+      rt_adjusted <- rt_adjusted * (1 + rnorm(1, 0, 0.01))
+      RTs[i] <- rt_adjusted
+    } else {
+      # For gradient elution, use a more complex model
+      # This is a simplified model based on LSS (Linear Solvent Strength) theory
+      
+      # k' = k0 * e^(-S*φ) where k0 is the retention factor in pure water, S is compound-specific, φ is organic content
+      
+      # Estimate when the compound will elute in the gradient
+      k0 <- compounds[[i]]$rt * 5  # Approximation of k0 based on isocratic rt
+      S <- compounds[[i]]$solvent_sensitivity * 10  # Scale solvent sensitivity
+      
+      # Simplified gradient elution time calculation
+      b <- (gradient_end - gradient_start) / gradient_time  # Gradient slope in % per minute
+      
+      # Gradient retention time calculation
+      t0 <- 0.5 * (column_length / 150) * (1 / flow_rate)  # Approximate void time
+      gradient_rt <- t0 + (log(k0) / (S * b * flow_rate))
+      
+      # Apply other factors that would still affect retention in gradient
+      gradient_rt <- gradient_rt * (column_length / 150)  # Column length effect
+      gradient_rt <- gradient_rt * (1 + (ionic_strength / 50) * compounds[[i]]$ionic_sensitivity)  # Ionic strength
+      
+      # pH effect
+      ph_difference <- abs(ph - compounds[[i]]$optimal_ph)
+      ph_factor <- 1 + (ph_difference / 2) * compounds[[i]]$ph_sensitivity
+      gradient_rt <- gradient_rt * ph_factor
+      
+      # Temperature effect
+      temp_factor <- (1 - (temperature - 30) * 0.015)
+      gradient_rt <- gradient_rt * temp_factor
+      
+      # Add noise to RT
+      gradient_rt <- gradient_rt * (1 + rnorm(1, 0, 0.01))
+      
+      # Ensure the RT is within our simulation time frame
+      gradient_rt <- max(0.5, min(14.5, gradient_rt))
+      
+      RTs[i] <- gradient_rt
+    }
     
-    # Base retention time for each compound
-    base_rt <- compounds[[i]]$rt
-    # Adjust for flow rate
-    rt_adjusted <- base_rt * (1 / flow_rate) * 1.5
-    # Adjust for column length
-    rt_adjusted <- rt_adjusted * (column_length / 150)
-    # Adjust for mobile phase composition
-    rt_adjusted <- rt_adjusted * (1 - (mobile_phase_composition / 100) * compounds[[i]]$solvent_sensitivity)
-    # Adjust for ionic strength (higher ionic strength can affect retention of charged compounds)
-    ionic_factor <- 1 + (ionic_strength / 50) * compounds[[i]]$ionic_sensitivity
-    rt_adjusted <- rt_adjusted * ionic_factor
-    # Adjust for pH (affects ionization state of compounds)
-    ph_difference <- abs(ph - compounds[[i]]$optimal_ph)
-    ph_factor <- 1 + (ph_difference / 2) * compounds[[i]]$ph_sensitivity
-    rt_adjusted <- rt_adjusted * ph_factor
-    # Adjust for temperature (van't Hoff relationship - higher temp usually means faster elution)
-    # Using a simplified model where a 10°C increase causes ~10-20% decrease in retention
-    temp_factor <- (1 - (temperature - 30) * 0.015)  # 1.5% change per degree from reference temp of 30°C
-    rt_adjusted <- rt_adjusted * temp_factor
+    # Adjust peak width
+    if (gradient_mode == "isocratic") {
+      peak_width <- 0.1 * (particle_size / 3) * (column_diameter / 4.6)
+    } else {
+      # In gradient mode, peaks are typically sharper
+      peak_width <- 0.07 * (particle_size / 3) * (column_diameter / 4.6)
+    }
     
-    # Aggiungo rumore a RT
-    rt_adjusted <- rt_adjusted*(1 + rnorm(1,0,0.01))
-    RTs[i] <- rt_adjusted 
-    
-    
-    
-    # Adjust peak width based on column properties
-    peak_width <- 0.1 * (particle_size / 3) * (column_diameter / 4.6)
-    # Temperature also affects peak width (higher temp = sharper peaks generally)
+    # Temperature also affects peak width
     peak_width <- peak_width * (1 - (temperature - 30) * 0.01)
-    peak_width <- peak_width * (1 + rnorm(1,0,0.05))
+    peak_width <- peak_width * (1 + rnorm(1, 0, 0.05))
     Widths[i] <- peak_width
     
     # Adjust peak height based on concentration and detection properties
     peak_height <- compounds[[i]]$concentration * (injection_volume / 10) * 
       compounds[[i]]$response_factors[detection_wavelength]
-    peak_height <- peak_height * (1 + rnorm(1,0,0.02))
+    peak_height <- peak_height * (1 + rnorm(1, 0, 0.02))
     Heights[i] <- peak_height
     
     # Generate peak
-    peaks[, i] <- peak_height * exp(-0.5 * ((time_points - rt_adjusted) / peak_width)^2)
+    peaks[, i] <- peak_height * exp(-0.5 * ((time_points - RTs[i]) / peak_width)^2)
     
-    
-    # Calculate peak area - numerical integration (approximately the sum of all points times the time step)
+    # Calculate peak area - numerical integration
     Areas[i] <- sum(peaks[, i]) * (time_points[2] - time_points[1])
   }
   
@@ -92,7 +148,8 @@ simulate_chromatogram <- function(compounds, flow_rate, column_length,
   list(
     data = data.frame(
       Time = time_points,
-      Signal = signal
+      Signal = signal,
+      MobilePhase = mobile_phase_at_time  # Add mobile phase composition at each time point
     ),
     RTs = RTs,
     Heights = Heights,
@@ -157,7 +214,6 @@ compounds_db <- list(
 
 
 
-
 ui <- page_navbar(
   title = "HPLC Simulator",
   nav_spacer(),
@@ -195,8 +251,27 @@ ui <- page_navbar(
                     choices = c(1.7, 3, 5), selected = 3),
         
         h4("Mobile Phase"),
-        sliderInput("mobile_phase_composition", "Organic Phase (%)", 
-                    min = 0, max = 100, value = 50, step = 5),
+        # Elution mode selection
+        selectInput("gradient_mode", "Elution Mode", 
+                    choices = c("isocratic", "gradient"), 
+                    selected = "isocratic"),
+        
+        # Show different controls based on elution mode
+        conditionalPanel(
+          condition = "input.gradient_mode == 'isocratic'",
+          sliderInput("mobile_phase_composition", "Organic Phase (%)", 
+                      min = 0, max = 100, value = 50, step = 5)
+        ),
+        
+        conditionalPanel(
+          condition = "input.gradient_mode == 'gradient'",
+          sliderInput("gradient_start", "Initial Organic Phase (%)", 
+                      min = 0, max = 95, value = 5, step = 5),
+          sliderInput("gradient_end", "Final Organic Phase (%)", 
+                      min = 5, max = 100, value = 95, step = 5),
+          sliderInput("gradient_time", "Gradient Time (min)", 
+                      min = 1, max = 15, value = 10, step = 1)
+        ),
         
         sliderInput("ionic_strength", "Ionic Strength (mM)", 
                     min = 0, max = 50, value = 20, step = 1),
@@ -208,19 +283,12 @@ ui <- page_navbar(
                     min = 20, max = 50, value = 30, step = 1),
         
         actionButton("generate", "Data generator", class = "btn-primary btn-lg w-100 mt-3")
-        
-  
-  
       ),
       
-      # layout_columns(
+      layout_columns(
         card(
           min_height = "375px",
           card_header("Simulated Chromatogram"),
-          # plotOutput("chromatogram_plot", height = "400px")
-          # style = "height: 500px; overflow-y: auto;"
-          
-          
           conditionalPanel(
             condition = "input.generate == 0",
             div(
@@ -230,14 +298,17 @@ ui <- page_navbar(
           ),
           conditionalPanel(
             condition = "input.generate > 0",
-            plotOutput("chromatogram_plot")
+            plotOutput("chromatogram_plot"),
+            conditionalPanel(
+              condition = "input.gradient_mode == 'gradient'",
+              plotOutput("gradient_plot", height = "130px")
+            )
           )
         ),
         
         card(
           min_height = "375px",
           card_header("Peak Information"),
-          # tableOutput("peak_info")
           conditionalPanel(
             condition = "input.generate == 0",
             div(
@@ -250,38 +321,33 @@ ui <- page_navbar(
             tableOutput("peak_info")
           )
         )
-      # )
+      )
       
       # card(
       #   height = 200,
       #   card_header("Simulator Information"),
       #   p("This HPLC simulator allows you to explore how different parameters affect chromatographic separation."),
       #   p("The simulator models the effects of flow rate, column dimensions, mobile phase composition, detector settings, ionic strength, pH, and temperature on the resulting chromatogram."),
+      #   p("You can now simulate both isocratic and gradient elution methods to observe how they affect peak resolution and retention time."),
       #   p("Note: This is a simplified model for educational purposes and doesn't account for all factors that would affect a real HPLC separation.")
       # )
-      )
+    )
+  ),
+  nav_panel(
+    title = "Historical data",
+    card(
+      card_header(
+        "Historical Data"
+      ),
+      DTOutput("history_peak_info")
     ),
+    layout_columns(
+      downloadButton("downloadData", "Save historical data to Excel", 
+                     class = "btn-success float-end"),
+      actionButton(inputId = "reset_button", label = "Reset historical data")
+    )
+  ),
   
-  
-  
-  
-  
-    nav_panel(
-      title = "Historical data",
-      card(
-        card_header(
-          "Historical Data"
-          ),
-        # height = 400,
-        DTOutput("history_peak_info")
-        # tableOutput("history_peak_info")
-      ),
-      layout_columns(
-        downloadButton("downloadData", "Save historical data to Excel", 
-                       class = "btn-success float-end"),
-        actionButton(inputId = "reset_button", label = "Reset historical data")
-      )
-      ),
   
   
   nav_panel(
@@ -295,35 +361,82 @@ ui <- page_navbar(
     )
   )
   
-  
-  
-  )
+)
+
 
 
 server <- function(input, output, session) {
   
   # Reactive to store selected compounds with their properties
-  selected_compounds <- eventReactive(input$generate,{
+  selected_compounds <- eventReactive(input$generate, {
     compounds_db[match(input$compounds, sapply(compounds_db, function(c) c$name))]
   })
   
+  # Initialize reactive value for storing historical data
+  history_data <- reactiveVal(
+    data.frame(
+      Exp = numeric(0),
+      Compound = character(0),
+      Elution_Mode = character(0),
+      Flow = numeric(0),
+      Vol = numeric(0),
+      Wavelength = character(0),
+      C_Length = numeric(0),
+      C_Diameter = numeric(0),
+      Size = numeric(0),
+      Phase = numeric(0),      # For isocratic
+      Grad_Start = numeric(0), # For gradient
+      Grad_End = numeric(0),   # For gradient
+      Grad_Time = numeric(0),  # For gradient
+      Ionic_Str = numeric(0),
+      pH = numeric(0),
+      Temp = numeric(0),
+      RT = character(0),
+      Height = character(0),
+      Width = character(0),
+      Area = character(0)
+    )
+  )
+  
+  # Counter for experiment number
+  experiment_counter <- reactiveVal(0)
+  
   # Simulate chromatogram when inputs change
-  chromatogram_data <- eventReactive(input$generate,{
+  chromatogram_data <- eventReactive(input$generate, {
     req(length(input$compounds) > 0)
-
+    
+    # Get mobile phase parameters based on elution mode
+    mobile_phase_composition <- if(input$gradient_mode == "isocratic") {
+      input$mobile_phase_composition
+    } else {
+      NA  # Not used directly for gradient mode
+    }
+    
+    # Additional gradient parameters
+    gradient_start <- if(input$gradient_mode == "gradient") input$gradient_start else NA
+    gradient_end <- if(input$gradient_mode == "gradient") input$gradient_end else NA
+    gradient_time <- if(input$gradient_mode == "gradient") input$gradient_time else NA
+    
+    # Increment experiment counter
+    experiment_counter(experiment_counter() + 1)
+    
     simulate_chromatogram(
       compounds = selected_compounds(),
       flow_rate = input$flow_rate,
       column_length = input$column_length,
       column_diameter = as.numeric(input$column_diameter),
       particle_size = as.numeric(input$particle_size),
-      mobile_phase_composition = input$mobile_phase_composition,
+      mobile_phase_composition = mobile_phase_composition,
       detection_wavelength = input$detection_wavelength,
       injection_volume = input$injection_volume,
       noise_level = input$noise_level,
       ionic_strength = input$ionic_strength,
       ph = input$ph,
-      temperature = input$temperature
+      temperature = input$temperature,
+      gradient_mode = input$gradient_mode,
+      gradient_start = gradient_start,
+      gradient_end = gradient_end,
+      gradient_time = gradient_time
     )
   })
   
@@ -347,16 +460,36 @@ server <- function(input, output, session) {
       )
   })
   
+  # Plot gradient profile for gradient mode
+  output$gradient_plot <- renderPlot({
+    req(input$gradient_mode == "gradient")
+    data <- chromatogram_data()$data
+    
+    ggplot(data, aes(x = Time, y = MobilePhase)) +
+      geom_line(linewidth = 1.2, color = "green4") +
+      labs(
+        x = "Time (min)",
+        y = "% Organic",
+        title = "Gradient Profile"
+      ) +
+      ylim(0, 100) +
+      theme_bw() +
+      theme(
+        plot.title = element_text(hjust = 0.5, size = 14),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10)
+      )
+  })
+  
   # Generate peak information table
   output$peak_info <- renderTable({
-    
     req(length(input$compounds) > 0)
     
     compounds <- selected_compounds()
     
     chromatogram_results <- chromatogram_data()
-    RTs <-  chromatogram_results$RTs
-    Heights  <- chromatogram_results$Heights
+    RTs <- chromatogram_results$RTs
+    Heights <- chromatogram_results$Heights
     Widths <- chromatogram_results$Widths
     Areas <- chromatogram_results$Areas
     
@@ -366,189 +499,153 @@ server <- function(input, output, session) {
       stringsAsFactors = FALSE
     )
     
-    result$RT <- sprintf("%.3f",round(RTs,3))
-    result$Height <- sprintf("%.3f",round(Heights,3))
+    result$RT <- sprintf("%.3f", round(RTs, 3))
+    result$Height <- sprintf("%.3f", round(Heights, 3))
     
     # Add peak width
-    result$Width <- sprintf("%.3f",round(Widths, 3))
+    result$Width <- sprintf("%.3f", round(Widths, 3))
     
     # Add peak area
-    result$Area <- sprintf("%.3f",round(Areas, 3))
+    result$Area <- sprintf("%.3f", round(Areas, 3))
     
     result
   })
-
-  history_data <- reactiveVal(
-    data.frame(
-      Exp = numeric(0),
-
-      Compound = character(0),
-      
-      Flow = numeric(0),
-      Vol = numeric(0),
-      
-      
-      Wavelength = numeric(0),
-      C_Length = numeric(0),
-      C_Diameter = numeric(0),
-      Size = numeric(0),
-      Phase = numeric(0),
-      Ionic_Str = numeric(0),
-      pH = numeric(0),
-      Temp = numeric(0),
-      
-      RT = numeric(0),
-      Height = numeric(0),
-      Width = numeric(0),
-      Area = character(0)
-    )
-  )
   
+  # Update historical data when a new simulation is run
   observeEvent(input$generate, {
     req(length(input$compounds) > 0)
     
     compounds <- selected_compounds()
     
     chromatogram_results <- chromatogram_data()
-    RTs <-  chromatogram_results$RTs
-    Heights  <- chromatogram_results$Heights
+    RTs <- chromatogram_results$RTs
+    Heights <- chromatogram_results$Heights
     Widths <- chromatogram_results$Widths
     Areas <- chromatogram_results$Areas
     
-    # Calculate adjusted retention times
-    result <- data.frame(
-      Compound = sapply(compounds, function(c) c$name),
-      stringsAsFactors = FALSE
-    )
-
-    current_data <- history_data()
+    # Create new data for this experiment
+    new_data <- data.frame()
     
-    # Calculate experiment number
-    exp_number <- 1
-    if (!is.null(current_data) && nrow(current_data) > 0) {
-      exp_number <- max(current_data$Exp) + 1
-    }
-    result$Exp = exp_number
-    
-    
-    result$Flow <- input$flow_rate
-    result$Vol <- input$injection_volume
-    
-    result$Wavelength <- input$detection_wavelength
-    result$C_Length <- input$column_length
-    result$C_Diameter <- input$column_diameter
-    result$Size <- input$particle_size
-    result$Phase <- input$mobile_phase_composition
-    result$Ionic_Str <- input$ionic_strength
-    result$pH <- input$ph
-    result$Temp <- input$temperature
+    for (i in seq_along(compounds)) {
+      # Use appropriate mobile phase parameters based on elution mode
+      phase_val <- NA
+      grad_start_val <- NA
+      grad_end_val <- NA
+      grad_time_val <- NA
       
-    
-    result$RT <- sprintf("%.3f",round(RTs,3))
-    result$Height <- sprintf("%.3f",round(Heights,3))
-    
-    # Add peak width
-    result$Width <- sprintf("%.3f",round(Widths, 3))
-    
-    # Add peak area
-    result$Area <- sprintf("%.3f",round(Areas, 3))
-
-    result <- result[, c(2, 1, 3:ncol(result))]
-    history_data(rbind(current_data,result))
-  })
-
-  # Render history table
-  output$history_peak_info  <- renderDT({
-    req(nrow(history_data()) > 0)
-    datatable(history_data(),
-              options = list(pageLength = 10,
-                             autoWidth = TRUE,
-                             scrollX = TRUE,
-                             order = list(
-                               list(0, 'desc')),  # Ordina per la colonna Exp (indice 0) in ordine discendente
-                             columnDefs = list(
-                               list(className = 'dt-center', targets = "_all")
-                             )),
-              rownames = FALSE)%>%
-    #   formatStyle(
-    #     columns = 7,
-    #     backgroundColor = bslib::bs_get_variables(bslib::bs_theme(), "primary"),
-    #     color = "white",
-    #     fontWeight = "bold"
-    #   )%>%
-      formatStyle(
-        columns = 13:16,
-        backgroundColor = bslib::bs_get_variables(bslib::bs_theme(), "success"),
-        color = "white",
-        fontWeight = "bold"
+      if (input$gradient_mode == "isocratic") {
+        phase_val <- input$mobile_phase_composition
+      } else {
+        grad_start_val <- input$gradient_start
+        grad_end_val <- input$gradient_end
+        grad_time_val <- input$gradient_time
+      }
+      
+      # Add one row for each compound in this experiment
+      new_row <- data.frame(
+        Exp = experiment_counter(),
+        Compound = compounds[[i]]$name,
+        Elution_Mode = input$gradient_mode,
+        Flow = input$flow_rate,
+        Vol = input$injection_volume,
+        Wavelength = input$detection_wavelength,
+        C_Length = input$column_length,
+        C_Diameter = as.numeric(input$column_diameter),
+        Size = as.numeric(input$particle_size),
+        Phase = phase_val,
+        Grad_Start = grad_start_val,
+        Grad_End = grad_end_val,
+        Grad_Time = grad_time_val,
+        Ionic_Str = input$ionic_strength,
+        pH = input$ph,
+        Temp = input$temperature,
+        RT = sprintf("%.3f", round(RTs[i], 3)),
+        Height = sprintf("%.3f", round(Heights[i], 3)),
+        Width = sprintf("%.3f", round(Widths[i], 3)),
+        Area = sprintf("%.3f", round(Areas[i], 3)),
+        stringsAsFactors = FALSE
       )
+      
+      # Combine with existing new data
+      new_data <- rbind(new_data, new_row)
+    }
+    
+    # Combine with historical data
+    history_data(rbind(history_data(), new_data))
   })
   
-  # Download handler for Excel export
+  # Display historical data
+  output$history_peak_info <- renderDT({
+    datatable(history_data(), 
+              options = list(pageLength = 15, 
+                             autoWidth = TRUE,
+                             scrollX = TRUE),
+              rownames = FALSE)
+  })
+  
+  # Download historical data as Excel
   output$downloadData <- downloadHandler(
     filename = function() {
-      paste("Exp_data-", format(Sys.time(), "%Y-%m-%d-%H%M%S"), ".xlsx", sep = "")
+      paste("HPLC_Simulation_Data_", format(Sys.time(), "%Y%m%d_%H%M"), ".xlsx", sep = "")
     },
     content = function(file) {
-      # Only proceed if there's data to download
-      req(nrow(history_data()) > 0)
-      
-      # Create a workbook
+      # Create a new workbook
       wb <- createWorkbook()
       
       # Add a worksheet
-      addWorksheet(wb, "Exp_data")
+      addWorksheet(wb, "Simulation Data")
       
       # Write the data to the worksheet
-      writeData(wb, "Exp_data", history_data())
+      writeData(wb, "Simulation Data", history_data())
       
-      # Style the header row
+      # Apply some styling
       headerStyle <- createStyle(
-        fontSize = 12, 
         fontColour = "#FFFFFF", 
-        halign = "center", 
-        fgFill = "#4472C4", 
-        border = "TopBottom", 
-        borderColour = "#000000"
+        fgFill = "#4F81BD",
+        halign = "center",
+        textDecoration = "bold"
       )
-      addStyle(wb, "Exp_data", headerStyle, rows = 1, cols = 1:ncol(history_data()))
       
-      # Auto-adjust column widths
-      setColWidths(wb, "Exp_data", cols = 1:ncol(history_data()), widths = "auto")
+      # Apply style to header row
+      addStyle(wb, "Simulation Data", headerStyle, rows = 1, cols = 1:ncol(history_data()))
       
       # Save the workbook
       saveWorkbook(wb, file, overwrite = TRUE)
     }
   )
   
+  # Reset historical data
   observeEvent(input$reset_button, {
-    # Restablece el reactiveVal a su valor inicial
     history_data(data.frame(
       Exp = numeric(0),
-      
       Compound = character(0),
-      
+      Elution_Mode = character(0),
       Flow = numeric(0),
       Vol = numeric(0),
-      
-      
-      Wavelength = numeric(0),
+      Wavelength = character(0),
       C_Length = numeric(0),
       C_Diameter = numeric(0),
       Size = numeric(0),
-      Phase = numeric(0),
+      Phase = numeric(0),      # For isocratic
+      Grad_Start = numeric(0), # For gradient
+      Grad_End = numeric(0),   # For gradient
+      Grad_Time = numeric(0),  # For gradient
       Ionic_Str = numeric(0),
       pH = numeric(0),
       Temp = numeric(0),
-      
-      RT = numeric(0),
-      Height = numeric(0),
-      Width = numeric(0),
+      RT = character(0),
+      Height = character(0),
+      Width = character(0),
       Area = character(0)
     ))
-    # showNotification("Historical data has been reset", type = "message")
+    
+    experiment_counter(0)
+    
+    showNotification("Historical data has been reset", type = "message")
   })
 }
 
+
+
 # Run the app
-shinyApp(ui, server)
+shinyApp(ui, server)                                  
