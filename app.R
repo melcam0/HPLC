@@ -13,6 +13,9 @@ library(dplyr)
 library(DT)
 library(openxlsx)
 
+
+
+
 # Function to simulate HPLC chromatogram with gradient support
 simulate_chromatogram <- function(compounds, flow_rate, column_length, 
                                   column_diameter, particle_size, 
@@ -222,11 +225,46 @@ compounds_db <- list(
 
 
 
+
+my_primary_color <-  "#DF6919"  # This is a blue-violet color
+# ui ----------------------------------------------------------------------
+
 ui <- page_navbar(
+  
+  theme = bs_theme(bootswatch = "superhero"),
+  # theme <- bs_theme_update(theme, primary = "#DF6919"),
+  
+  # my_primary_color <-  "#DF6919" , # This is a blue-violet color
+  # theme <- bs_theme_update(theme, preset = "materia"),
+  
+  # theme = bs_theme_update(theme, preset = "superhero"),
+  # Add custom CSS to ensure sliders maintain the primary color
+ 
+  header = tagList(
+    tags$head(
+      tags$style(HTML(paste0("
+        .irs-bar, .irs-bar-edge, .irs-single, .irs-from, .irs-to {
+          background: ", my_primary_color, " !important;
+          border-color: ", my_primary_color, " !important;
+        }
+        .irs-handle {
+          border-color: ", my_primary_color, " !important;
+           background: ", my_primary_color, " !important;
+        }
+        .sidebar, .sidebar-content, .sidebar .form-group, .sidebar .control-label {
+          --bs-primary: ", my_primary_color, " !important;
+          --bs-primary-rgb: ", paste(as.vector(col2rgb(my_primary_color)), collapse = ","), " !important;
+        }
+      ")))
+    ),
+  # 
+  
   title = "HPLC Simulator",
+  # header = "HPLC Simulator",
   nav_spacer(),
   nav_panel(
     title = "Simulator",
+    # headerPanel("Simulator"),
     page_sidebar(
       sidebar = sidebar(
         h4("Sample"),
@@ -343,6 +381,7 @@ ui <- page_navbar(
   ),
   nav_panel(
     title = "Historical data",
+    # headerPanel = "Historical data",
     card(
       card_header(
         "Historical Data"
@@ -360,6 +399,7 @@ ui <- page_navbar(
   
   nav_panel(
     title = "About",
+    # headerPanel = "About",
     card(
       height = 200,
       card_header("Simulator Information"),
@@ -373,7 +413,12 @@ ui <- page_navbar(
 
 
 
+# server ------------------------------------------------------------------
+
+
 server <- function(input, output, session) {
+  
+  bs_themer()
   
   # Reactive to store selected compounds with their properties
   selected_compounds <- eventReactive(input$generate, {
