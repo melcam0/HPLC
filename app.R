@@ -1,3 +1,11 @@
+if(!nzchar(system.file(package = "shiny"))) install.packages("shiny")
+if(!nzchar(system.file(package = "bslib"))) install.packages("bslib")
+if(!nzchar(system.file(package = "dplyr"))) install.packages("dplyr")
+if(!nzchar(system.file(package = "DT"))) install.packages("DT")
+if(!nzchar(system.file(package = "openxlsx"))) install.packages("openxlsx")
+if(!nzchar(system.file(package = "ggplot2"))) install.packages("ggplot2")
+
+
 library(shiny)
 library(bslib)
 library(ggplot2)
