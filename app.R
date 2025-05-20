@@ -410,7 +410,7 @@ ui <- page_navbar(
     ),
     layout_columns(
       downloadButton("downloadData", "Save historical data to Excel", 
-                     class = "btn-success float-end"),
+                     class = "btn-primary float-end"),
       actionButton(inputId = "reset_button", label = "Reset historical data")
     )
   ),
