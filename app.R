@@ -13,9 +13,6 @@ library(dplyr)
 library(DT)
 library(openxlsx)
 
-
-
-
 # Function to simulate HPLC chromatogram with gradient support
 simulate_chromatogram <- function(compounds, flow_rate, column_length, 
                                   column_diameter, particle_size, 
@@ -224,22 +221,16 @@ compounds_db <- list(
 )
 
 
-
-
 my_primary_color <-  "#DF6919"  # This is a blue-violet color
+theme <- bs_theme()
 # ui ----------------------------------------------------------------------
 
+
 ui <- page_navbar(
+  title = "HPLC Simulator" ,
   
-  theme = bs_theme(bootswatch = "superhero"),
-  # theme <- bs_theme_update(theme, primary = "#DF6919"),
+  theme = bs_theme_update(theme, preset = "superhero"),
   
-  # my_primary_color <-  "#DF6919" , # This is a blue-violet color
-  # theme <- bs_theme_update(theme, preset = "materia"),
-  
-  # theme = bs_theme_update(theme, preset = "superhero"),
-  # Add custom CSS to ensure sliders maintain the primary color
- 
   header = tagList(
     tags$head(
       tags$style(HTML(paste0("
@@ -255,16 +246,46 @@ ui <- page_navbar(
           --bs-primary: ", my_primary_color, " !important;
           --bs-primary-rgb: ", paste(as.vector(col2rgb(my_primary_color)), collapse = ","), " !important;
         }
+        
+        .selectize-input {
+          color: #fff !important;
+        }
+        
+      /* Colore testo e sfondo delle opzioni nel menu a tendina */
+      .selectize-dropdown .option {
+        color: #fff !important;
+        background-color: #0F2537 !important;
+      }
+      
+      /* Opzione attualmente evidenziata (hover/focus) */
+    .selectize-dropdown .option.active {
+       color: #fff !important;
+       background-color: #FFC69F !important; /* Cambia qui per il colore hover */
+    }
+     /* Opzione già selezionata nell’elenco */
+    .selectize-dropdown .option.selected {
+      color: #fff !important;
+      background-color: #DF6919 !important;
+    }
+
+/* numericInput e textInput */
+    input.form-control, 
+    input[type='number'], 
+    input[type='text'] {
+      color: #fff !important;
+      background-color: #0F2537 !important;
+      border-color: #444 !important;
+    }
       ")))
-    ),
-  # 
+    )
+  ),
   
-  title = "HPLC Simulator",
-  # header = "HPLC Simulator",
+  
+  
+  # title = "HPLC Simulator",
   nav_spacer(),
   nav_panel(
     title = "Simulator",
-    # headerPanel("Simulator"),
     page_sidebar(
       sidebar = sidebar(
         h4("Sample"),
@@ -381,7 +402,6 @@ ui <- page_navbar(
   ),
   nav_panel(
     title = "Historical data",
-    # headerPanel = "Historical data",
     card(
       card_header(
         "Historical Data"
@@ -399,7 +419,6 @@ ui <- page_navbar(
   
   nav_panel(
     title = "About",
-    # headerPanel = "About",
     card(
       height = 200,
       card_header("Simulator Information"),
@@ -417,8 +436,6 @@ ui <- page_navbar(
 
 
 server <- function(input, output, session) {
-  
-  bs_themer()
   
   # Reactive to store selected compounds with their properties
   selected_compounds <- eventReactive(input$generate, {
@@ -629,11 +646,19 @@ server <- function(input, output, session) {
   
   # Display historical data
   output$history_peak_info <- renderDT({
+    n <- ncol(history_data())
     datatable(history_data(), 
               options = list(pageLength = 15, 
                              autoWidth = TRUE,
                              scrollX = TRUE),
-              rownames = FALSE)
+              rownames = FALSE)%>%
+      formatStyle(
+        columns = ((n-3):n),  
+        # backgroundColor = bslib::bs_get_variables(bslib::bs_theme(), "primary"),
+        backgroundColor = "#898785",
+        color = "white",
+        fontWeight = "bold"
+      )
   })
   
   # Download historical data as Excel
