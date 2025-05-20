@@ -461,10 +461,10 @@ server <- function(input, output, session) {
       Ionic_Str = numeric(0),
       pH = numeric(0),
       Temp = numeric(0),
-      RT = character(0),
-      Height = character(0),
-      Width = character(0),
-      Area = character(0)
+      RT = numeric(0),
+      Height = numeric(0),
+      Width = numeric(0),
+      Area = numeric(0)
     )
   )
   
@@ -674,7 +674,14 @@ server <- function(input, output, session) {
       addWorksheet(wb, "Simulation Data")
       
       # Write the data to the worksheet
-      writeData(wb, "Simulation Data", history_data())
+      hist_data <-  history_data()
+      hist_data$RT <- as.numeric(hist_data$RT)
+      hist_data$Height <- as.numeric(hist_data$Height)
+      hist_data$Width <- as.numeric(hist_data$Width)
+      hist_data$Area <- as.numeric(hist_data$Area)
+      
+      
+      writeData(wb, "Simulation Data", hist_data)
       
       # Apply some styling
       headerStyle <- createStyle(
@@ -684,8 +691,20 @@ server <- function(input, output, session) {
         textDecoration = "bold"
       )
       
+      # Stile intestazione  risposte gialla
+      headerRisposteStyle <- createStyle(
+        fontColour = "#FFFFFF",   # testo nero per maggiore leggibilità
+        fgFill = "#E26B0A",       # giallo
+        halign = "center",
+        textDecoration = "bold"
+      )
+     
       # Apply style to header row
-      addStyle(wb, "Simulation Data", headerStyle, rows = 1, cols = 1:ncol(history_data()))
+      addStyle(wb, "Simulation Data", headerStyle, rows = 1, cols = 1:ncol(hist_data))
+      
+      # Applica lo stile risposte" alle ultime 4 intestazioni
+      addStyle(
+        wb, "Simulation Data", headerRisposteStyle, rows = 1, cols = (ncol(hist_data)-3):ncol(hist_data))
       
       # Save the workbook
       saveWorkbook(wb, file, overwrite = TRUE)
