@@ -664,7 +664,7 @@ server <- function(input, output, session) {
   # Download historical data as Excel
   output$downloadData <- downloadHandler(
     filename = function() {
-      paste("HPLC_Simulation_Data_", format(Sys.time(), "%Y%m%d_%H%M"), ".xlsx", sep = "")
+      paste("HPLC_Simulation_", format(Sys.time(), "%Y%m%d_%H%M"), ".xlsx", sep = "")
     },
     content = function(file) {
       # Create a new workbook
@@ -691,10 +691,10 @@ server <- function(input, output, session) {
         textDecoration = "bold"
       )
       
-      # Stile intestazione  risposte gialla
+      # Stile intestazione  risposte arancione
       headerRisposteStyle <- createStyle(
-        fontColour = "#FFFFFF",   # testo nero per maggiore leggibilità
-        fgFill = "#E26B0A",       # giallo
+        fontColour = "#FFFFFF",   # testo bianco per maggiore leggibilità
+        fgFill = "#E26B0A",       # arancione
         halign = "center",
         textDecoration = "bold"
       )
