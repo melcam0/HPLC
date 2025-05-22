@@ -281,8 +281,78 @@ ui <- page_navbar(
   ),
   
   
+  nav_panel(
+    title = "About",
+    
+    layout_columns(
+      # widths = 8,
+      card(
+        height = 200,
+        card_header("Simulator Information"),
+        p("This HPLC simulator allows you to explore how different parameters affect chromatographic separation."),
+        p("The simulator models the effects of flow rate, column dimensions, mobile phase composition, detector settings, ionic strength, pH, and temperature on the resulting chromatogram."),
+        p("Note: This is a simplified model for educational purposes and doesn't account for all factors that would affect a real HPLC separation.")
+      ),
+      card(
+        card_header("Contact"),
+        p("For questions or feedback about these simulator, please contact us."),
+        p("Email: giorgio.marrubini@unipv.it"),
+        p("Email: camillomelzi@gmail.com")
+      )
+      ),
+    
+    
+    # fluidRow(
+    #   column(
+    #     # width = 8,  # Prima colonna più larga
+    #     card(
+    #       # height = 400,
+    #       width = 8,  # Prima colonna più larga
+    #       card_header("Simulator Information"),
+    #       p("This HPLC simulator allows you to explore how different parameters affect chromatographic separation."),
+    #       p("The simulator models the effects of flow rate, column dimensions, mobile phase composition, detector settings, ionic strength, pH, and temperature on the resulting chromatogram."),
+    #       p("Note: This is a simplified model for educational purposes and doesn't account for all factors that would affect a real HPLC separation.")
+    #     )
+    #   ),
+    #   column(
+    #     
+    #     card(
+    #       # height = 400,
+    #       width = 4,  # Seconda colonna più stretta
+    #       card_header("Contact"),
+    #       p("For questions or feedback about these simulators, please contact us."),
+    #       p("Email: giorgio.marrubini@unipv.it"),
+    #       p("Email: camillomelzi@gmail.com")
+    #     )
+    #   )
+    # ),
+      
+      
+
+      
+      
+      
+    
+    
+
+    
+    
+    
+    
+    
+    
+    card_footer(
+      style = "padding: 8px; margin-top: auto; display: flex; justify-content: space-between;", 
+      # Elemento a sinistra
+      span(""),
+      # Elemento al centro
+      span(style = "text-align: center;", "Version 1.0"),
+      # Elemento a destra
+      span("")
+    )
+  ),
   
-  # title = "HPLC Simulator",
+  
   nav_spacer(),
   nav_panel(
     title = "Simulator",
@@ -412,19 +482,6 @@ ui <- page_navbar(
       downloadButton("downloadData", "Save historical data to Excel", 
                      class = "btn-primary float-end"),
       actionButton(inputId = "reset_button", label = "Reset historical data")
-    )
-  ),
-  
-  
-  
-  nav_panel(
-    title = "About",
-    card(
-      height = 200,
-      card_header("Simulator Information"),
-      p("This HPLC simulator allows you to explore how different parameters affect chromatographic separation."),
-      p("The simulator models the effects of flow rate, column dimensions, mobile phase composition, detector settings, ionic strength, pH, and temperature on the resulting chromatogram."),
-      p("Note: This is a simplified model for educational purposes and doesn't account for all factors that would affect a real HPLC separation.")
     )
   )
   
