@@ -349,7 +349,7 @@ ui <- page_navbar(
         sliderInput("temperature", "Temperature (°C)", 
                     min = 20, max = 50, value = 30, step = 1),
         
-        actionButton("generate", "Data generator", class = "btn-primary btn-lg w-100 mt-3")
+        actionButton("generate", "Generate Data", class = "btn-primary btn-lg w-100 mt-3")
       ),
       
       layout_columns(
@@ -360,7 +360,7 @@ ui <- page_navbar(
             condition = "input.generate == 0",
             div(
               style = "color: #d9534f; font-weight: bold; border: 2px dashed #d9534f; padding: 15px; text-align: center; margin: 10px 0;",
-              "Press the 'Data generator' button to start the simulation."
+              "Press the 'Generate Data' button to start the simulation."
             )
           ),
           conditionalPanel(
@@ -380,7 +380,7 @@ ui <- page_navbar(
             condition = "input.generate == 0",
             div(
               style = "color: #d9534f; font-weight: bold; border: 2px dashed #d9534f; padding: 15px; text-align: center; margin: 10px 0;",
-              "Press the 'Data generator' button to start the simulation."
+              "Press the 'Generate Data' button to start the simulation."
             )
           ),
           conditionalPanel(
